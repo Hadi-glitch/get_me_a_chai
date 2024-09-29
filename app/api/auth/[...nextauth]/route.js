@@ -8,7 +8,7 @@ import GitHubProvider from "next-auth/providers/github";
 import User from "@/models/User";
 import connectDb from "@/db/connectDb";
 
-export const authoptions = NextAuth({
+export const authOptions = NextAuth({
   providers: [
     TwitterProvider({
       clientId: process.env.TWITTER_ID,
@@ -38,35 +38,49 @@ export const authoptions = NextAuth({
       clientSecret: process.env.GITHUB_SECRET,
     }),
   ],
+  secret: process.env.NEXTAUTH_SECRET, // Add this for production
   callbacks: {
-    async signIn({ user, account, profile, email, credentials }) {
-      if (
-        account.provider == "github" ||
-        account.provider == "facebook" ||
-        account.provider == "twitter" ||
-        account.provider == "apple" ||
-        account.provider == "google" ||
-        account.provider == "linkedin" ||
-        account.provider == "twitter" ||
-        account.provider == "facebook"
-      ) {
-        await connectDb();
-        const currentUser = await User.findOne({ email: email });
-        if (!currentUser) {
-          const newUser = await User.create({
-            email: user.email,
-            username: user.email.split("@")[0],
-          });
+    async signIn({ user, account }) {
+      try {
+        if (
+          ["github", "facebook", "twitter", "apple", "google", "linkedin"].includes(
+            account.provider
+          )
+        ) {
+          await connectDb();
+
+          // Check if the user exists in the database
+          const currentUser = await User.findOne({ email: user.email });
+          if (!currentUser) {
+            // Create a new user if not found
+            await User.create({
+              email: user.email,
+              username: user.email.split("@")[0],
+            });
+          }
+          return true;
         }
-        return true;
+        return false; // If provider is not one of the specified ones
+      } catch (error) {
+        console.error("Error in signIn callback:", error);
+        return false;
       }
     },
-    async session({ session, user, token }) {
-      const dbUser = await User.findOne({ email: session.user.email });
-      session.user.name = dbUser.username;
-      return session;
+    async session({ session }) {
+      try {
+        await connectDb();
+        const dbUser = await User.findOne({ email: session.user.email });
+
+        if (dbUser) {
+          session.user.name = dbUser.username; // Attach username from DB
+        }
+        return session;
+      } catch (error) {
+        console.error("Error in session callback:", error);
+        return session;
+      }
     },
   },
 });
 
-export { authoptions as GET, authoptions as POST };
+export { authOptions as GET, authOptions as POST };
